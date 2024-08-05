@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Multi-Model Chat Interface</title>
+    <link href="https://fonts.googleapis.com/css?family=Inter&display=swap" rel="stylesheet">
+    <link href="{{ url_for('static', filename='css/main.css') }}" rel="stylesheet">
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.1/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <div class="sidebar">
+            <button class="model-btn active" data-model="llama">Llama</button>
+            <button class="model-btn" data-model="gemini">Gemini</button>
+            <button class="model-btn" data-model="gpt">GPT</button>
+            
+            <button id="new-conversation">Nova Conversa</button>
+            
+            <div class="saved-conversations">
+                <h3>Conversas Salvas</h3>
+                <div id="llama-conversations">
+                    <h4>Conversas com o Llama</h4>
+                    <ul></ul>
+                </div>
+                <div id="gemini-conversations">
+                    <h4>Conversas com o Gemini</h4>
+                    <ul></ul>
+                </div>
+                <div id="gpt-conversations">
+                    <h4>Conversas com o GPT</h4>
+                    <ul></ul>
+                </div>
+            </div>
+        </div>
+        <div class="chat-container">
+            <div class="chat-header">
+                <span id="conversation-title">Nova Conversa</span>
+                <div class="header-buttons">
+                    <button id="edit-title"><i class="fas fa-pencil-alt"></i></button>
+                    <button id="delete-conversation"><i class="fas fa-trash"></i></button>
+                </div>
+            </div>
+            <div id="llama-chat" class="chat active">
+                <div class="messages"></div>
+            </div>
+            <div id="gemini-chat" class="chat">
+                <div class="messages"></div>
+            </div>
+            <div id="gpt-chat" class="chat">
+                <div class="messages"></div>
+            </div>
+            <div class="input-container">
+                <input type="text" id="user-input" placeholder="Digite a sua mensagem...">
+                <button id="send-button">
+                    <i class="fas fa-paper-plane"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        $(document).ready(function() {
+            let currentModel = 'llama';
+            let conversations = {
+                llama: [],
+                gemini: [],
+                gpt: []
+            };
+            let currentConversationId = null;
+
+            function initializeChat(model) {
+                if ($(`#${model}-chat .messages`).children().length === 0) {
+                    addMessage(model, 'bot', model.charAt(0).toUpperCase() + model.slice(1), 'O que você precisa hoje?');
+                }
+            }
+
+            function addMessage(model, type, name, text) {
+                const avatarSrc = type === 'bot' ? "{{ url_for('static', filename='images/bot-avatar.png') }}" : "{{ url_for('static', filename='images/user-avatar.png') }}";
+                const messageHtml = `
+                    <div class="message ${type}-message">
+                        <img src="${avatarSrc}" alt="${type} Avatar" class="avatar">
+                        <div class="message-content">
+                            <div class="message-header">${name}</div>
+                            <div class="message-text">${text}</div>
+                        </div>
+                    </div>
+                `;
+                $(`#${model}-chat .messages`).append(messageHtml);
+                $(`#${model}-chat .messages`).scrollTop($(`#${model}-chat .messages`)[0].scrollHeight);
+
+                if (type === 'user' && $(`#${model}-chat .messages .user-message`).length === 1) {
+                    const title = generateProvisionalTitle(model, text);
+                    const conversation = conversations[model].find(conv => conv.id === currentConversationId);
+                    if (conversation) {
+                        conversation.title = title;
+                    }
+                }
+
+                saveCurrentConversation(model);
+            }
+
+            function generateProvisionalTitle(model, firstMessage) {
+                const title = firstMessage.substring(0, 30) + (firstMessage.length > 30 ? '...' : '');
+                $('#conversation-title').text(title);
+                updateConversationsList(model);
+                return title;
+            }
+
+            function saveCurrentConversation(model) {
+                const messages = $(`#${model}-chat .messages`).html();
+                if (currentConversationId === null) {
+                    const title = $('#conversation-title').text();
+                    currentConversationId = Date.now();
+                    conversations[model].push({
+                        id: currentConversationId,
+                        title: title,
+                        messages: messages
+                    });
+                } else {
+                    const conversation = conversations[model].find(conv => conv.id === currentConversationId);
+                    if (conversation) {
+                        conversation.messages = messages;
+                    }
+                }
+                updateConversationsList(model);
+            }
+
+            function updateConversationsList(model) {
+                const $list = $(`#${model}-conversations ul`);
+                $list.empty();
+                conversations[model].forEach(conv => {
+                    $list.append(`<li data-id="${conv.id}">${conv.title}</li>`);
+                });
+            }
+
+            function loadConversation(model, id) {
+                const conversation = conversations[model].find(conv => conv.id === id);
+                if (conversation) {
+                    $(`#${model}-chat .messages`).html(conversation.messages);
+                    $('#conversation-title').text(conversation.title);
+                    currentConversationId = id;
+                    $(`#${model}-chat .messages`).scrollTop($(`#${model}-chat .messages`)[0].scrollHeight);
+                }
+            }
+
+            function startNewConversation(model) {
+                currentModel = model;
+                $('.model-btn').removeClass('active');
+                $(`.model-btn[data-model="${model}"]`).addClass('active');
+                $('.chat').removeClass('active').hide();
+                $(`#${model}-chat`).addClass('active').show();
+                $(`#${model}-chat .messages`).empty();
+                $('#conversation-title').text('Nova Conversa');
+                currentConversationId = null;
+                initializeChat(model);
+            }
+
+            function deleteCurrentConversation() {
+                if (currentConversationId) {
+                    conversations[currentModel] = conversations[currentModel].filter(conv => conv.id !== currentConversationId);
+                    updateConversationsList(currentModel);
+                    startNewConversation(currentModel);
+                }
+            }
+
+            $('.model-btn').click(function() {
+                const newModel = $(this).data('model');
+                startNewConversation(newModel);
+            });
+
+            $('#new-conversation').click(function() {
+                if (currentModel) {
+                    startNewConversation(currentModel);
+                }
+            });
+
+            function sendMessage() {
+                const userMessage = $('#user-input').val().trim();
+                if (userMessage === "" || !currentModel) return;
+
+                addMessage(currentModel, 'user', 'Você', userMessage);
+                $('#user-input').val('');
+
+                $.post('/send_message', { message: userMessage, model: currentModel }, function(data) {
+                    addMessage(currentModel, 'bot', currentModel.charAt(0).toUpperCase() + currentModel.slice(1), data.response);
+                });
+            }
+
+            $('#send-button').click(sendMessage);
+            $('#user-input').keypress(function(e) {
+                if (e.which == 13) sendMessage();
+            });
+
+            $('#edit-title').click(function() {
+                const newTitle = prompt("Digite o novo título para esta conversa:", $('#conversation-title').text());
+                if (newTitle && currentConversationId) {
+                    $('#conversation-title').text(newTitle);
+                    const conversation = conversations[currentModel].find(conv => conv.id === currentConversationId);
+                    if (conversation) {
+                        conversation.title = newTitle;
+                        updateConversationsList(currentModel);
+                    }
+                }
+            });
+
+            $('#delete-conversation').click(deleteCurrentConversation);
+
+            $(document).on('click', '.saved-conversations li', function() {
+                const id = parseInt($(this).data('id'));
+                loadConversation(currentModel, id);
+            });
+
+            // Iniciar com Llama como modelo padrão
+            startNewConversation('llama');
+        });
+    </script>
+</body>
+</html>
